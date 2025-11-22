@@ -20,11 +20,6 @@ return [
             'monthly_gross_income' => env('CALCULATOR_DEFAULT_GMI', 25000),
         ],
     ],
-            'total_contract_price' => env('CALCULATOR_DEFAULT_TCP', 850000),
-            'age' => env('CALCULATOR_DEFAULT_AGE', 30),
-            'monthly_gross_income' => env('CALCULATOR_DEFAULT_GMI', 25000),
-        ],
-    ],
     'limits' => [
         'min_borrowing_age' => 21,
         'max_borrowing_age' => 65,
