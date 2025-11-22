@@ -38,6 +38,12 @@ class LendingInstitution
         return $this->key;
     }
     
+    public function get(string $path, mixed $default = null): mixed
+    {
+        // Support dot notation for nested config values
+        return $this->getSettingsValue($path, $default);
+    }
+    
     protected function loadSettings(): void
     {
         $this->settings = match($this->key) {

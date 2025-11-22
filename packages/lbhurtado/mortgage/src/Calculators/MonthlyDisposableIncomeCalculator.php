@@ -25,6 +25,6 @@ final class MonthlyDisposableIncomeCalculator extends BaseCalculator
 
     public function toFloat(): float
     {
-        return $this->calculate()->base()->getAmount()->toFloat();
+        return $this->calculate()->inclusive()->getAmount()->toFloat();
     }
 }

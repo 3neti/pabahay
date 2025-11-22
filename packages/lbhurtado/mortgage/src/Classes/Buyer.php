@@ -194,7 +194,7 @@ class Buyer implements BuyerInterface
 
     public function getMonthlyDisposableIncome(): Price
     {
-        return (new Price($this->getMonthlyGrossIncome()->base()))->setVat(0)
+        return (new Price($this->getMonthlyGrossIncome()->inclusive()))
             ->addModifier('disposable income multiplier', DisposableModifier::class, $this->getIncomeRequirementMultiplier());
     }
 
@@ -203,7 +203,7 @@ class Buyer implements BuyerInterface
         $all = collect([$this])->merge($this->co_borrowers);
 
         $sum = $all->reduce(function (Money $carry, Buyer $buyer) {
-            return $carry->plus($buyer->getMonthlyGrossIncome()->base());
+            return $carry->plus($buyer->getMonthlyGrossIncome()->inclusive());
         }, MoneyFactory::zero());
 
         return MoneyFactory::price($sum);
