@@ -30,7 +30,7 @@ final class MonthlyAmortizationCalculator extends BaseCalculator
         $ma = LoanAmountCalculator::fromInputs($this->inputs)
             ->calculate()
             ->addModifier('periodic payment', PeriodicPaymentModifier::class, $term, $rate)
-            ->base();
+            ->inclusive();
 
         return MoneyFactory::priceWithPrecision($ma);
     }

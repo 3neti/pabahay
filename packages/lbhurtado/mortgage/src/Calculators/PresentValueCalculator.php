@@ -24,13 +24,13 @@ final class PresentValueCalculator extends BaseCalculator
         $interest_rate = ExtractorFactory::make(ExtractorType::INTEREST_RATE, $this->inputs)->extract()->value();
         $present_value = CalculatorFactory::make(CalculatorType::DISPOSABLE_INCOME, $this->inputs)->calculate()
             ->addModifier('present value', PresentValueModifier::class, $term, $interest_rate)
-            ->base();
+            ->inclusive();
 
         return MoneyFactory::price($present_value);
     }
 
     public function toFloat(): float
     {
-        return $this->calculate()->base()->getAmount()->toFloat();
+        return $this->calculate()->inclusive()->getAmount()->toFloat();
     }
 }
