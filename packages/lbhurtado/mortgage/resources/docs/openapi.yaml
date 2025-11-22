@@ -1,0 +1,832 @@
+openapi: 3.1.0
+info:
+  title: Product Matching
+  version: 1.0.32
+  description: |
+    This API supports loan qualification and onboarding automation.
+
+    Common flow:
+    1. POST `/mortgage-compute` to calculate qualification.
+    2. If qualified, POST to `/loan-profiles` to persist a reference profile.
+    3. Use `/loan-profiles/onboard/{reference_code}` to start onboarding via KYC.
+
+servers:
+  - url: https://gnc-revelation-main-ndpjj4.laravel.cloud/api/v1
+    description: Production server
+
+tags:
+  - name: Product Matching
+    description: Match a buyer to eligible products
+  - name: Mortgage Computation
+    description: Compute amortization, equity, and loan qualification
+  - name: Properties
+    description: Fetch available property listings
+  - name: Lending Institutions
+    description: Explore supported lending institutions
+  - name: Products
+    description: Browse sellable product bundles
+  - name: Loan Profiles
+    description: Manage loan qualification profiles and onboarding flows
+
+paths:
+  /product-match:
+    post:
+      tags:
+        - Product Matching
+      summary: Match buyer to eligible product bundles based on affordability
+      operationId: matchProductBundles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - age
+                - monthly_income
+              properties:
+                age:
+                  type: integer
+                  example: 40
+                  minimum: 18
+                  maximum: 65
+                monthly_income:
+                  type: number
+                  example: 25000
+                  minimum: 10000
+                additional_income:
+                  type: number
+                  nullable: true
+                  example: 5000
+                co_borrower_age:
+                  type: integer
+                  nullable: true
+                  example: 38
+                  minimum: 18
+                  maximum: 60
+                co_borrower_income:
+                  type: number
+                  nullable: true
+                  example: 18000
+                lending_institution:
+                  type: string
+                  nullable: true
+                  enum: [hdmf, rcbc, cbc]
+                  description: Possible values for lending institution. Can be omitted.
+                price_limit:
+                  type: number
+                  nullable: true
+                  example: 1500000
+                  minimum: 800000
+      responses:
+        '200':
+          description: A list of product bundles the buyer qualifies for
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        qualified:
+                          type: boolean
+                          example: true
+                        product_code:
+                          type: string
+                          example: "product-a"
+                        monthly_amortization:
+                          type: number
+                          example: 6543.21
+                        income_required:
+                          type: number
+                          example: 21000
+                        suggested_equity:
+                          type: number
+                          example: 150000
+                        income_gap:
+                          type: number
+                          example: 3000
+                        suggested_down_payment_percent:
+                          type: number
+                          format: float
+                          example: 0.25
+                        reason:
+                          type: string
+                          example: "Income insufficient for full loan. Suggest higher down payment."
+
+  /mortgage-compute:
+    post:
+      tags:
+        - Mortgage Computation
+      summary: Compute mortgage result and qualification
+      description: >
+        Calculates amortization, equity, and loan qualification. If qualified, use `/loan-profiles` to store the profile and `/loan-profiles/onboard/{reference_code}` to begin KYC onboarding. Ideal for building guided buyer journeys and automation.`.
+      operationId: computeMortgage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - total_contract_price
+                - age
+                - monthly_gross_income
+              properties:
+                lending_institution:
+                  type: string
+                  nullable: true
+                  enum: [hdmf, rcbc, cbc]
+                  description: >
+                    The institution providing the loan. Possible values are "hdmf", "rcbc", or "cbc". Can be omitted.
+                total_contract_price:
+                  type: number
+                  example: 1000000
+                  description: The total value of the contract for the property.
+                age:
+                  type: integer
+                  example: 35
+                  description: The age of the primary borrower.
+                monthly_gross_income:
+                  type: number
+                  example: 50000
+                  description: The monthly gross income of the primary borrower.
+                co_borrower_age:
+                  type: integer
+                  nullable: true
+                  example: 40
+                  description: Co-borrower's age, if applicable.
+                co_borrower_income:
+                  type: number
+                  nullable: true
+                  example: 20000
+                  description: Co-borrower's monthly gross income, if applicable.
+                additional_income:
+                  type: number
+                  nullable: true
+                  example: 10000
+                  description: Any additional income of the primary borrower.
+                balance_payment_interest:
+                  type: number
+                  format: float
+                  nullable: true
+                  example: 0.05
+                  description: >
+                    Optional. Specifies the interest rate for balance payment as a decimal
+                    (e.g., 0.05 = 5%). If not provided, the default interest rate will be used.
+                percent_down_payment:
+                  type: number
+                  format: float
+                  nullable: true
+                  example: 0.10
+                  description: >
+                    Optional. Down payment as a decimal (e.g., 0.10 = 10%). If not provided,
+                    defaults to the lender's requirements.
+                percent_miscellaneous_fee:
+                  type: number
+                  format: float
+                  nullable: true
+                  example: 0.085
+                  description: >
+                    Optional. Percentage for miscellaneous fees (e.g., taxes and other costs).
+                    Defaults to 8.5% (0.085) if not provided.
+                processing_fee:
+                  type: number
+                  nullable: true
+                  example: 10000
+                  description: >
+                    Processing fee applied for the loan. Defaults will be used if omitted.
+                add_mri:
+                  type: boolean
+                  nullable: true
+                  example: true
+                  description: >
+                    Whether to include Mortgage Redemption Insurance (MRI) as part of the computation.
+                add_fi:
+                  type: boolean
+                  nullable: true
+                  example: true
+                  description: >
+                    Whether to include Fire Insurance (FI) as part of the computation.
+
+
+  /properties:
+    get:
+      tags:
+        - Properties
+      summary: List available properties with optional filters
+      operationId: listProperties
+      parameters:
+        - in: query
+          name: code
+          schema:
+            type: string
+            example: PROP0001
+          description: Filter by property code
+        - in: query
+          name: available_only
+          schema:
+            type: boolean
+            example: true
+          description: Show only available properties (status = available)
+        - in: query
+          name: lending_institution
+          schema:
+            oneOf:
+              - type: string
+              - type: array
+                items:
+                  type: string
+            example: hdmf
+          description: Filter by lending institution (e.g., hdmf, rcbc, cbc)
+        - in: query
+          name: min_price
+          schema:
+            type: number
+            example: 1000000
+          description: Minimum total contract price (PHP)
+        - in: query
+          name: max_price
+          schema:
+            type: number
+            example: 3000000
+          description: Maximum total contract price (PHP)
+        - in: query
+          name: development_type
+          schema:
+            type: string
+            enum: [ bp_220, bp_957 ]
+            example: bp_957
+          description: Filter by development type
+        - in: query
+          name: development_form
+          schema:
+            type: string
+            enum: [ horizontal, vertical ]
+            example: horizontal
+          description: Filter by development form
+        - in: query
+          name: housing_type
+          schema:
+            type: string
+            enum:
+              - condominium
+              - duplex
+              - row_house
+              - single_attached
+              - single_detached
+              - quadruplex
+              - townhouse
+              - twin_homes
+            example: row_house
+          description: Filter by housing type
+      responses:
+        '200':
+          description: A list of filtered properties with financial and classification metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code:
+                      type: string
+                    name:
+                      type: string
+                    status:
+                      type: string
+                    total_contract_price:
+                      type: number
+                    appraisal_value:
+                      type: number
+                    percent_loanable_value:
+                      type: number
+                    percent_miscellaneous_fees:
+                      type: number
+                    processing_fee:
+                      type: number
+                    development_type:
+                      type: string
+                    development_form:
+                      type: string
+                    housing_type:
+                      type: string
+                    lending_institution:
+                      type: string
+                    lending_institution_details:
+                      type: object
+                      properties:
+                        borrowing_age:
+                          type: object
+                          properties:
+                            minimum:
+                              type: integer
+                            maximum:
+                              type: integer
+                            offset:
+                              type: integer
+                        maximum_term:
+                          type: integer
+                        maximum_paying_age:
+                          type: integer
+                        buffer_margin:
+                          type: number
+                        income_requirement_multiplier:
+                          type: number
+                        interest_rate:
+                          type: number
+                        percent_dp:
+                          type: number
+
+  /lending-institutions:
+    get:
+      tags:
+        - Lending Institutions
+      summary: List all supported lending institutions
+      operationId: listLendingInstitutions
+      responses:
+        '200':
+          description: A list of supported lending institutions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    key:
+                      type: string
+                    name:
+                      type: string
+                    alias:
+                      type: string
+                    type:
+                      type: string
+
+  /lending-institutions/{key}:
+    get:
+      tags:
+        - Lending Institutions
+      summary: Show configuration of a specific lending institution
+      operationId: showLendingInstitution
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lending institution configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  name:
+                    type: string
+                  alias:
+                    type: string
+                  type:
+                    type: string
+                  borrowing_age:
+                    type: object
+                    properties:
+                      minimum:
+                        type: integer
+                      maximum:
+                        type: integer
+                      offset:
+                        type: integer
+                  maximum_term:
+                    type: integer
+                  maximum_paying_age:
+                    type: integer
+                  buffer_margin:
+                    type: number
+                  income_requirement_multiplier:
+                    type: number
+                  interest_rate:
+                    type: number
+                  percent_down_payment:
+                    type: number
+        '404':
+          description: Lending institution not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /products:
+    get:
+      tags:
+        - Products
+      summary: List all products with associated properties
+      operationId: listProducts
+      parameters:
+        - in: query
+          name: sku
+          schema:
+            type: string
+            example: product-a
+          description: Filter by product SKU
+        - in: query
+          name: lending_institution
+          schema:
+            type: string
+            example: rcbc
+          description: Filter products by lending institution
+      responses:
+        '200':
+          description: A list of products with related properties
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    sku:
+                      type: string
+                    name:
+                      type: string
+                    brand:
+                      type: string
+                    category:
+                      type: string
+                    description:
+                      type: string
+                    price:
+                      type: number
+                      format: float
+                      description: Price in major units (converted from minor)
+                    properties:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          code:
+                            type: string
+                          name:
+                            type: string
+                          type:
+                            type: string
+                            nullable: true
+                          cluster:
+                            type: string
+                            nullable: true
+                          status:
+                            type: string
+                            nullable: true
+                          sku:
+                            type: string
+                          project_code:
+                            type: string
+                            nullable: true
+                          total_contract_price:
+                            type: number
+                            format: float
+                          appraisal_value:
+                            type: number
+                            format: float
+                          development_type:
+                            type: string
+                            nullable: true
+                          development_form:
+                            type: string
+                            nullable: true
+                          housing_type:
+                            type: string
+                            nullable: true
+                          percent_loanable_value:
+                            type: number
+                            format: float
+                            description: Percentage as a decimal (0.85 = 85%)
+                          percent_miscellaneous_fees:
+                            type: number
+                            format: float
+                            description: Percentage as a decimal (0.085 = 8.5%)
+                          processing_fee:
+                            type: number
+                            format: float
+                          required_buffer_margin:
+                            type: number
+                            format: float
+                            description: Percentage as a decimal (0.10 = 10%)
+                          lending_institution:
+                            type: string
+                            description: Canonical key (e.g., hdmf, rcbc, cbc)
+                          income_requirement_multiplier:
+                            type: number
+                            format: float
+                            description: Percentage as a decimal (0.35 = 35%)
+
+  /products/{sku}:
+    get:
+      tags:
+        - Products
+      summary: Show a specific product by SKU
+      operationId: showProduct
+      parameters:
+        - in: path
+          name: sku
+          required: true
+          schema:
+            type: string
+          description: SKU of the product
+        - in: query
+          name: lending_institution
+          schema:
+            type: string
+            example: rcbc
+          description: Optional filter by lending institution
+      responses:
+        '200':
+          description: Product details with related properties
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sku:
+                    type: string
+                  name:
+                    type: string
+                  brand:
+                    type: string
+                  category:
+                    type: string
+                  description:
+                    type: string
+                  price:
+                    type: number
+                    format: float
+                    description: Price in major units (converted from minor)
+                  properties:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                        name:
+                          type: string
+                        type:
+                          type: string
+                          nullable: true
+                        cluster:
+                          type: string
+                          nullable: true
+                        status:
+                          type: string
+                          nullable: true
+                        sku:
+                          type: string
+                        project_code:
+                          type: string
+                          nullable: true
+                        total_contract_price:
+                          type: number
+                          format: float
+                        appraisal_value:
+                          type: number
+                          format: float
+                        development_type:
+                          type: string
+                          nullable: true
+                        development_form:
+                          type: string
+                          nullable: true
+                        housing_type:
+                          type: string
+                          nullable: true
+                        percent_loanable_value:
+                          type: number
+                          format: float
+                          description: Percentage as a decimal (0.85 = 85%)
+                        percent_miscellaneous_fees:
+                          type: number
+                          format: float
+                          description: Percentage as a decimal (0.085 = 8.5%)
+                        processing_fee:
+                          type: number
+                          format: float
+                        required_buffer_margin:
+                          type: number
+                          format: float
+                          description: Percentage as a decimal (0.10 = 10%)
+                        lending_institution:
+                          type: string
+                          description: Canonical key (e.g., hdmf, rcbc, cbc)
+                        income_requirement_multiplier:
+                          type: number
+                          format: float
+                          description: Percentage as a decimal (0.35 = 35%)
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Product 'sku-code' not found.
+
+  /loan-profiles:
+    post:
+      tags:
+        - Loan Profiles
+      summary: Create a new loan profile and return the result with a reference code
+      description: >
+        Persists a qualified mortgage profile for tracking, onboarding, or follow-up.
+        Returns a unique reference code that can be used with other endpoints
+        such as `/loan-profiles/{reference_code}` or `/loan-profiles/onboard/{reference_code}`.
+      operationId: createLoanProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MortgageInputsData'
+      responses:
+        '200':
+          description: Created loan profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanProfile'
+
+  /loan-profiles/{reference_code}:
+    get:
+      tags:
+        - Loan Profiles
+      summary: Retrieve a specific loan profile using its reference code
+      operationId: showLoanProfile
+      parameters:
+        - in: path
+          name: reference_code
+          required: true
+          schema:
+            type: string
+          description: The reference code associated with the loan profile
+      responses:
+        '200':
+          description: Loan profile found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanProfile'
+        '404':
+          description: Loan profile not found
+
+  /loan-profiles/onboard/{reference_code}:
+    get:
+      tags:
+        - Loan Profiles
+      summary: Return onboarding URL based on loan profile reference code
+      description: >
+        Returns a redirect URL to the eKYC onboarding system with the loan profile’s reference code.
+        Use this to begin the formal onboarding process once a buyer is qualified.
+      operationId: onboardLoanProfile
+      parameters:
+        - in: path
+          name: reference_code
+          required: true
+          schema:
+            type: string
+          description: Reference code of the loan profile
+      responses:
+        '200':
+          description: Onboarding link returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    example: https://onboard.example.com?reference_code=ABCD-1234
+        '404':
+          description: Loan profile not found
+
+components:
+  schemas:
+    MortgageComputationData:
+      type: object
+      properties:
+        lending_institution:
+          type: string
+        interest_rate:
+          type: number
+        percent_down_payment:
+          type: number
+        percent_miscellaneous_fees:
+          type: number
+        total_contract_price:
+          type: number
+        income_requirement_multiplier:
+          type: number
+        balance_payment_term:
+          type: integer
+        monthly_disposable_income:
+          type: number
+        present_value:
+          type: number
+        loanable_amount:
+          type: number
+        required_equity:
+          type: number
+        monthly_amortization:
+          type: number
+        miscellaneous_fees:
+          type: number
+        add_on_fees:
+          type: number
+        cash_out:
+          type: number
+        income_gap:
+          type: number
+        percent_down_payment_remedy:
+          type: number
+
+    LoanProfile:
+      type: object
+      properties:
+        reference_code:
+          type: string
+        lending_institution:
+          type: string
+        total_contract_price:
+          type: number
+        inputs:
+          type: object
+          additionalProperties: true
+        computation:
+          type: object
+          additionalProperties: true
+        qualified:
+          type: boolean
+        required_equity:
+          type: number
+        income_gap:
+          type: number
+        suggested_down_payment_percent:
+          type: number
+        reason:
+          type: string
+        reserved_at:
+          type: string
+          format: date-time
+    MortgageInputsData:
+      type: object
+      required:
+        - total_contract_price
+        - age
+        - monthly_gross_income
+      properties:
+        lending_institution:
+          type: string
+          enum: [hdmf, rcbc, cbc]
+        total_contract_price:
+          type: number
+        age:
+          type: integer
+        monthly_gross_income:
+          type: number
+        co_borrower_age:
+          type: integer
+          nullable: true
+        co_borrower_income:
+          type: number
+          nullable: true
+        additional_income:
+          type: number
+          nullable: true
+        balance_payment_interest:
+          type: number
+          nullable: true
+        percent_down_payment:
+          type: number
+          nullable: true
+        percent_miscellaneous_fee:
+          type: number
+          nullable: true
+        processing_fee:
+          type: number
+        add_mri:
+          type: boolean
+        add_fi:
+          type: boolean

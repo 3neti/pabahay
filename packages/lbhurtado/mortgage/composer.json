@@ -1,0 +1,28 @@
+{
+    "name": "lbhurtado/mortgage",
+    "description": "Mortgage computation and loan qualification package",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "LBHurtado\\Mortgage\\": "src/"
+        }
+    },
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^12.0",
+        "whitecube/php-prices": "^2.3",
+        "brick/money": "^0.9",
+        "spatie/laravel-data": "^4.0",
+        "frittenkeez/laravel-vouchers": "^1.0"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "LBHurtado\\Mortgage\\MortgageServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
