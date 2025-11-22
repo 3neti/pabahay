@@ -14,6 +14,16 @@ return [
             'interest_rate' => env('DEFAULT_INTEREST_RATE'),
             'down_payment_term' => env('DEFAULT_DOWN_PAYMENT_TERM'),
         ],
+        'calculator' => [
+            'total_contract_price' => env('CALCULATOR_DEFAULT_TCP', 850000),
+            'age' => env('CALCULATOR_DEFAULT_AGE', 30),
+            'monthly_gross_income' => env('CALCULATOR_DEFAULT_GMI', 25000),
+        ],
+    ],
+            'total_contract_price' => env('CALCULATOR_DEFAULT_TCP', 850000),
+            'age' => env('CALCULATOR_DEFAULT_AGE', 30),
+            'monthly_gross_income' => env('CALCULATOR_DEFAULT_GMI', 25000),
+        ],
     ],
     'limits' => [
         'min_borrowing_age' => 21,

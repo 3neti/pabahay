@@ -5,11 +5,22 @@ import axios from 'axios';
 import AmortizationSchedule from '@/Components/Mortgage/AmortizationSchedule.vue';
 import ComparisonResults from '@/Components/Mortgage/ComparisonResults.vue';
 
+const props = defineProps({
+    defaults: {
+        type: Object,
+        default: () => ({
+            total_contract_price: 850000,
+            age: 30,
+            monthly_gross_income: 25000,
+        }),
+    },
+});
+
 const form = useForm({
     lending_institution: 'hdmf',
-    total_contract_price: null,
-    age: null,
-    monthly_gross_income: null,
+    total_contract_price: props.defaults.total_contract_price,
+    age: props.defaults.age,
+    monthly_gross_income: props.defaults.monthly_gross_income,
     co_borrower_age: null,
     co_borrower_income: null,
     additional_income: null,
