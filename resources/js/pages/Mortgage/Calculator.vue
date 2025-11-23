@@ -3,7 +3,6 @@ import { ref, computed, watch } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import axios from 'axios';
 import AmortizationSchedule from '@/Components/Mortgage/AmortizationSchedule.vue';
-import ComparisonResults from '@/Components/Mortgage/ComparisonResults.vue';
 
 const props = defineProps({
     defaults: {
@@ -347,9 +346,6 @@ const showSaveModal = ref(false);
 const showLookupModal = ref(false);
 const lookupCode = ref('');
 const lookingUp = ref(false);
-const comparing = ref(false);
-const comparisonResults = ref(null);
-const showComparison = ref(false);
 const saveForm = useForm({
     email: '',
     name: '',
@@ -404,8 +400,7 @@ const saveCalculation = async () => {
     try {
         const response = await axios.post('/api/v1/mortgage/loan-profiles', {
             ...form.data(),
-            ...result.value,
-            borrower_name: saveForm.email ? saveForm.name : null,
+            borrower_name: saveForm.name || null,
             borrower_email: saveForm.email || null,
             send_email: saveForm.send_email,
         });
@@ -483,30 +478,6 @@ const closeSavedAlert = () => {
     savedProfile.value = null;
 };
 
-const compareInstitutions = async () => {
-    comparing.value = true;
-    error.value = null;
-
-    try {
-        const response = await axios.post('/api/v1/mortgage/compare', form.data());
-
-        if (response.data.success) {
-            comparisonResults.value = response.data;
-            showComparison.value = true;
-        } else {
-            error.value = response.data.message || 'Comparison failed';
-        }
-    } catch (err) {
-        error.value = err.response?.data?.message || 'An error occurred during comparison.';
-        console.error('Comparison error:', err);
-    } finally {
-        comparing.value = false;
-    }
-};
-
-const closeComparison = () => {
-    showComparison.value = false;
-};
 </script>
 
 <template>
@@ -863,13 +834,6 @@ const closeComparison = () => {
                             {{ computing ? 'Computing...' : 'Compute Mortgage' }}
                         </button>
                         <button
-                            @click="compareInstitutions"
-                            :disabled="comparing"
-                            class="flex-1 bg-purple-600 text-white px-6 py-3 rounded-md hover:bg-purple-700 disabled:opacity-50"
-                        >
-                            {{ comparing ? 'Comparing...' : 'Compare All' }}
-                        </button>
-                        <button
                             @click="reset"
                             class="px-6 py-3 border border-gray-300 rounded-md hover:bg-gray-50"
                         >
@@ -1095,14 +1059,6 @@ const closeComparison = () => {
                     </div>
                 </div>
             </div>
-
-            <!-- Comparison Modal -->
-            <ComparisonResults
-                v-if="showComparison && comparisonResults"
-                :comparisons="comparisonResults.comparisons"
-                :best-options="comparisonResults.bestOptions"
-                @close="closeComparison"
-            />
         </div>
     </div>
 </template>
