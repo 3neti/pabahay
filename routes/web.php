@@ -14,5 +14,6 @@ Route::get('/mortgage-calculator', function () {
             'age' => 30,
             'monthly_gross_income' => 25000,
         ]),
+        'products' => config('mortgage.products', []),
     ]);
 })->name('mortgage.calculator');

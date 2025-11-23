@@ -49,5 +49,6 @@ class MortgageInputsData extends Data
         public ?Price $processing_fee,
         public bool $add_mri,
         public bool $add_fi,
+        public ?int $desired_loan_term = null,
     ) {}
 }

@@ -64,6 +64,10 @@ class MortgageComputationService
     {
         $computation = $this->compute($inputs);
 
+        $tcp = $computation->total_contract_price->base()->getAmount()->toFloat();
+        $downPaymentPercent = $computation->percent_down_payment->value();
+        $baseLoanAmount = $tcp * (1 - $downPaymentPercent);
+        
         return [
             'inputs' => $computation->inputs->toArray(),
             'lending_institution' => [
@@ -72,9 +76,11 @@ class MortgageComputationService
                 'alias' => $computation->lending_institution->alias(),
             ],
             'interest_rate' => $computation->interest_rate->value(),
-            'percent_down_payment' => $computation->percent_down_payment->value(),
+            'percent_down_payment' => $downPaymentPercent,
             'percent_miscellaneous_fees' => $computation->percent_miscellaneous_fees->value(),
-            'total_contract_price' => $computation->total_contract_price->base()->getAmount()->toFloat(),
+            'total_contract_price' => $tcp,
+            'down_payment_amount' => $tcp * $downPaymentPercent,
+            'base_loan_amount' => $baseLoanAmount,
             'balance_payment_term' => $computation->balance_payment_term,
             'income_requirement_multiplier' => $computation->income_requirement_multiplier->value(),
             'monthly_disposable_income' => $computation->monthly_disposable_income->getAmount()->toFloat(),
@@ -88,6 +94,7 @@ class MortgageComputationService
             'income_gap' => $computation->income_gap->getAmount()->toFloat(),
             'percent_down_payment_remedy' => $computation->percent_down_payment_remedy->value(),
             'required_income' => $computation->required_income->getAmount()->toFloat(),
+            'total_property_cost' => $tcp + $computation->miscellaneous_fees->getAmount()->toFloat(),
             'qualifies' => $computation->qualifies,
             'qualification' => $this->qualificationService->formatQualificationResult($computation),
         ];

@@ -39,7 +39,7 @@ return [
             'maximum_paying_age' => 70,
             'buffer_margin' => 0.1,
             'income_requirement_multiplier' => 0.35,
-            'interest_rate' => 0.0625,
+            'interest_rate' => 0.0625,  // 6.25% - varies by price (3% for ≤750k, 6.25% for >750k)
             'percent_dp' => 0.0,
             'loanable_value_multiplier' => 1.0,
             'percent_mf' => 0.0,
@@ -57,7 +57,7 @@ return [
             'maximum_paying_age' => 65,
             'buffer_margin' => 0.15,
             'income_requirement_multiplier' => 0.35,
-            'interest_rate' => 0.0625,//TODO: make this 8%
+            'interest_rate' => 0.08,  // 8%
             'percent_dp' => 0.10,
             'loanable_value_multiplier' => 0.9,
             'percent_mf' => 0.085,
@@ -75,10 +75,96 @@ return [
             'maximum_paying_age' => 65,
             'buffer_margin' => 0.15,
             'income_requirement_multiplier' => 0.35,
-            'interest_rate' => 0.0625,//TODO: make this 7%
+            'interest_rate' => 0.07,  // 7%
             'percent_dp' => 0.10,
             'loanable_value_multiplier' => 0.9,
             'percent_mf' => 0.085,
+        ],
+    ],
+    /*
+    |--------------------------------------------------------------------------
+    | Product Selection Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure how products are automatically selected for buyers.
+    |
+    | engine: Selection engine to use
+    |   - 'rules': Use JSON rules engine (default, flexible)
+    |   - 'simple': Use simple preference config (cheapest/most_expensive)
+    |
+    | preference: Fallback when rules engine disabled or no rules match
+    |   - 'cheapest': Select product with lowest monthly payment
+    |   - 'most_expensive': Select product with highest monthly payment
+    |
+    | rules_file: Path to JSON rules file
+    | cache_rules: Whether to cache rules (recommended for production)
+    |
+    | To change via environment variables:
+    |   PRODUCT_SELECTION_ENGINE=simple
+    |   PRODUCT_SELECTION_PREFERENCE=most_expensive
+    |
+    */
+    'product_selection' => [
+        'engine' => env('PRODUCT_SELECTION_ENGINE', 'rules'),
+        'preference' => env('PRODUCT_SELECTION_PREFERENCE', 'cheapest'),
+        'rules_file' => storage_path('app/product_selection_rules.json'),
+        'cache_rules' => env('CACHE_PRODUCT_RULES', true),
+    ],
+    
+    'products' => [
+        [
+            'id' => 'product-a',
+            'name' => 'Product A',
+            'lending_institution' => 'hdmf',
+            'price' => 850_000,
+        ],
+        [
+            'id' => 'product-b',
+            'name' => 'Product B',
+            'lending_institution' => 'hdmf',
+            'price' => 1_500_000,
+        ],
+        [
+            'id' => 'product-c',
+            'name' => 'Product C',
+            'lending_institution' => 'hdmf',
+            'price' => 2_200_000,
+        ],
+        [
+            'id' => 'product-d',
+            'name' => 'Product D',
+            'lending_institution' => 'rcbc',
+            'price' => 1_850_000,
+        ],
+        [
+            'id' => 'product-e',
+            'name' => 'Product E',
+            'lending_institution' => 'rcbc',
+            'price' => 2_300_000,
+        ],
+        [
+            'id' => 'product-f',
+            'name' => 'Product F',
+            'lending_institution' => 'rcbc',
+            'price' => 2_800_000,
+        ],
+        [
+            'id' => 'product-g',
+            'name' => 'Product G',
+            'lending_institution' => 'cbc',
+            'price' => 2_300_000,
+        ],
+        [
+            'id' => 'product-h',
+            'name' => 'Product H',
+            'lending_institution' => 'cbc',
+            'price' => 2_800_000,
+        ],
+        [
+            'id' => 'product-i',
+            'name' => 'Product I',
+            'lending_institution' => 'cbc',
+            'price' => 3_100_000,
         ],
     ],
     'default_lending_institution' => env('DEFAULT_LENDING_INSTITUTION', 'hdmf'),

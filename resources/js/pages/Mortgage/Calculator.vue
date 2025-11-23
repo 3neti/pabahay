@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import axios from 'axios';
 import AmortizationSchedule from '@/Components/Mortgage/AmortizationSchedule.vue';
@@ -14,7 +14,32 @@ const props = defineProps({
             monthly_gross_income: 25000,
         }),
     },
+    products: {
+        type: Array,
+        default: () => [],
+    },
 });
+
+// Interest rate calculation logic
+const calculateInterestRate = (institution, tcp) => {
+    // Market segment rates (used for HDMF or as fallback)
+    const getMarketRate = (price) => {
+        if (price <= 750000) return 0.03;  // 3%
+        if (price <= 850000) return 0.0625;  // 6.25%
+        return 0.0625;  // 6.25% for > 850k
+    };
+
+    // Lending institution default rates
+    const institutionRates = {
+        'hdmf': getMarketRate(tcp),  // HDMF uses market segment rates
+        'rcbc': 0.08,  // 8%
+        'cbc': 0.07,   // 7%
+    };
+
+    return institutionRates[institution] || 0.0625;
+};
+
+const selectedProduct = ref(null);
 
 const form = useForm({
     lending_institution: 'hdmf',
@@ -24,12 +49,250 @@ const form = useForm({
     co_borrower_age: null,
     co_borrower_income: null,
     additional_income: null,
-    balance_payment_interest: null,
+    balance_payment_interest: calculateInterestRate('hdmf', props.defaults.total_contract_price),
     percent_down_payment: null,
     percent_miscellaneous_fee: null,
     processing_fee: null,
     add_mri: false,
     add_fi: false,
+    desired_loan_term: null, // Optional: user can choose shorter term than max
+});
+
+const lendingInstitutions = [
+    { key: 'hdmf', name: 'HDMF (Pag-IBIG)' },
+    { key: 'rcbc', name: 'RCBC' },
+    { key: 'cbc', name: 'CBC' },
+];
+
+// Product selector handler
+const onProductChange = () => {
+    if (selectedProduct.value) {
+        const product = props.products.find(p => p.id === selectedProduct.value);
+        if (product) {
+            form.total_contract_price = product.price;
+            form.lending_institution = product.lending_institution;
+            // Reset manual edit flags when product changes
+            interestRateManuallyEdited.value = false;
+            mfManuallyEdited.value = false;
+            // Disable auto-select when user manually changes product
+            autoSelectEnabled.value = false;
+        }
+    }
+};
+
+// Track if user manually edited interest rate or MF
+const interestRateManuallyEdited = ref(false);
+const mfManuallyEdited = ref(false);
+
+// Calculate MF percent based on lending institution
+const calculateMFPercent = (institution) => {
+    const institutionMF = {
+        'hdmf': 0.0,    // 0%
+        'rcbc': 0.085,  // 8.5%
+        'cbc': 0.085,   // 8.5%
+    };
+    return institutionMF[institution] || 0.0;
+};
+
+// Watch for changes in TCP or lending institution to auto-update interest rate
+watch(
+    [() => form.total_contract_price, () => form.lending_institution],
+    ([newTCP, newInstitution]) => {
+        // Only auto-update if user hasn't manually edited it
+        if (!interestRateManuallyEdited.value && newTCP && newInstitution) {
+            form.balance_payment_interest = calculateInterestRate(newInstitution, newTCP);
+        }
+    }
+);
+
+// Watch for lending institution changes to auto-update MF
+watch(
+    () => form.lending_institution,
+    (newInstitution) => {
+        // Only auto-update if user hasn't manually edited it
+        if (!mfManuallyEdited.value && newInstitution) {
+            form.percent_miscellaneous_fee = calculateMFPercent(newInstitution);
+        }
+    },
+    { immediate: true } // Calculate on mount
+);
+
+// Mark as manually edited when user changes the interest rate directly
+const onInterestRateChange = () => {
+    interestRateManuallyEdited.value = true;
+};
+
+// Mark as manually edited when user changes MF directly
+const onMFChange = () => {
+    mfManuallyEdited.value = true;
+};
+
+// Calculate maximum loan term based on age and lending institution
+const maxLoanTerm = computed(() => {
+    const age = form.age;
+    const coBorrowerAge = form.co_borrower_age;
+    const institution = form.lending_institution;
+    
+    if (!age || age < 18) {
+        return 30; // Default
+    }
+    
+    // Get lending institution parameters
+    const institutionParams = {
+        'hdmf': { maxPayingAge: 70, maxTerm: 30, offset: 0 },
+        'rcbc': { maxPayingAge: 65, maxTerm: 20, offset: -1 },
+        'cbc': { maxPayingAge: 65, maxTerm: 20, offset: -1 },
+    };
+    
+    const params = institutionParams[institution] || institutionParams['hdmf'];
+    
+    // Use oldest borrower's age
+    const effectiveAge = (coBorrowerAge && coBorrowerAge > age) ? coBorrowerAge : age;
+    
+    // Calculate: min(floor((maxPayingAge + offset) - age), maxTerm)
+    // Note: Backend may use fractional age (e.g., 50.5 years), which can result in
+    // one year less than shown here. This is expected behavior.
+    const limit = params.maxPayingAge + params.offset;
+    const calculatedTerm = Math.floor(limit - effectiveAge);
+    
+    return Math.max(5, Math.min(calculatedTerm, params.maxTerm)); // Between 5 and max
+});
+
+// State for affordability calculation
+const affordabilityLoading = ref(false);
+const calculateMaxAffordablePrice = ref(0);
+let affordabilityDebounceTimer = null;
+
+// State for product auto-selection
+const productSelectionLoading = ref(false);
+const recommendedProduct = ref(null);
+const autoSelectEnabled = ref(true);
+let productSelectionDebounceTimer = null;
+
+// Debounced function to fetch affordability from backend
+const fetchAffordability = async () => {
+    const age = form.age;
+    const gmi = form.monthly_gross_income;
+    
+    if (!age || !gmi || age < 18 || gmi <= 0) {
+        calculateMaxAffordablePrice.value = 0;
+        return;
+    }
+    
+    affordabilityLoading.value = true;
+    
+    try {
+        const response = await axios.post('/api/v1/mortgage/affordability', {
+            lending_institution: form.lending_institution,
+            age: age,
+            monthly_gross_income: gmi,
+            additional_income: form.additional_income || null,
+            co_borrower_age: form.co_borrower_age || null,
+            co_borrower_income: form.co_borrower_income || null,
+            down_payment_available: 0, // Assume 0 down payment for filtering
+            monthly_debts: 0, // No debts for simple filtering
+            loan_term: form.desired_loan_term || null, // Use desired term if specified
+        });
+        
+        if (response.data.success) {
+            calculateMaxAffordablePrice.value = Math.floor(response.data.data.max_home_price);
+        }
+    } catch (err) {
+        console.error('Affordability calculation error:', err);
+        calculateMaxAffordablePrice.value = 0;
+    } finally {
+        affordabilityLoading.value = false;
+    }
+};
+
+// Debounced function to auto-select best product
+const autoSelectProduct = async (forceRun = false) => {
+    const age = form.age;
+    const gmi = form.monthly_gross_income;
+    
+    if (!age || !gmi || age < 18 || gmi <= 0) {
+        recommendedProduct.value = null;
+        return;
+    }
+    
+    // Skip if auto-select disabled unless forced (manual button click)
+    if (!forceRun && !autoSelectEnabled.value) {
+        recommendedProduct.value = null;
+        return;
+    }
+    
+    productSelectionLoading.value = true;
+    
+    try {
+        const response = await axios.post('/api/v1/mortgage/product/select', {
+            age: age,
+            monthly_gross_income: gmi,
+            return_top_n: 3,
+        });
+        
+        if (response.data.success && response.data.selected_product) {
+            recommendedProduct.value = response.data.selected_product;
+            
+            // Auto-select the product in the dropdown
+            selectedProduct.value = response.data.selected_product.product_id;
+            
+            // Trigger product change to update form fields
+            onProductChange();
+        } else {
+            recommendedProduct.value = null;
+        }
+    } catch (err) {
+        console.error('Product selection error:', err);
+        recommendedProduct.value = null;
+    } finally {
+        productSelectionLoading.value = false;
+    }
+};
+
+// Watch for changes in buyer details and debounce API call
+watch(
+    [() => form.age, () => form.monthly_gross_income, () => form.additional_income, 
+     () => form.co_borrower_age, () => form.co_borrower_income, () => form.lending_institution],
+    () => {
+        // Clear existing timer
+        if (affordabilityDebounceTimer) {
+            clearTimeout(affordabilityDebounceTimer);
+        }
+        
+        // Set new timer for 500ms debounce
+        affordabilityDebounceTimer = setTimeout(() => {
+            fetchAffordability();
+        }, 500);
+    },
+    { immediate: true } // Calculate on mount
+);
+
+// Manual product recommendation (no auto-select)
+const getProductRecommendation = async () => {
+    // Force run even if autoSelectEnabled is false
+    await autoSelectProduct(true);
+};
+
+// Filter products by affordability
+const affordableProducts = computed(() => {
+    const maxPrice = calculateMaxAffordablePrice.value;
+    
+    if (maxPrice === 0) {
+        return props.products; // Show all if no buyer info yet
+    }
+    
+    return props.products.filter(product => product.price <= maxPrice);
+});
+
+// Group products by lending institution
+const groupedAffordableProducts = computed(() => {
+    const grouped = {};
+    
+    lendingInstitutions.forEach(inst => {
+        grouped[inst.key] = affordableProducts.value.filter(p => p.lending_institution === inst.key);
+    });
+    
+    return grouped;
 });
 
 const computing = ref(false);
@@ -49,12 +312,6 @@ const saveForm = useForm({
     name: '',
     send_email: false,
 });
-
-const lendingInstitutions = [
-    { key: 'hdmf', name: 'HDMF (Pag-IBIG)' },
-    { key: 'rcbc', name: 'RCBC' },
-    { key: 'cbc', name: 'CBC' },
-];
 
 const formatCurrency = (value) => {
     if (!value) return '₱0.00';
@@ -256,33 +513,6 @@ const closeComparison = () => {
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <!-- Input Form -->
                 <div class="lg:col-span-2 space-y-6">
-                    <!-- Lending Institution -->
-                    <div class="bg-white shadow rounded-lg p-6">
-                        <h2 class="text-xl font-semibold mb-4">Lending Institution</h2>
-                        <select v-model="form.lending_institution" class="w-full border-gray-300 rounded-md shadow-sm">
-                            <option v-for="inst in lendingInstitutions" :key="inst.key" :value="inst.key">
-                                {{ inst.name }}
-                            </option>
-                        </select>
-                    </div>
-
-                    <!-- Property Details -->
-                    <div class="bg-white shadow rounded-lg p-6">
-                        <h2 class="text-xl font-semibold mb-4">Property Details</h2>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">Total Contract Price *</label>
-                                <input
-                                    v-model.number="form.total_contract_price"
-                                    type="number"
-                                    placeholder="e.g. 1000000"
-                                    class="mt-1 w-full border-gray-300 rounded-md shadow-sm"
-                                    required
-                                />
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Buyer Details -->
                     <div class="bg-white shadow rounded-lg p-6">
                         <h2 class="text-xl font-semibold mb-4">Buyer Details</h2>
@@ -317,6 +547,171 @@ const closeComparison = () => {
                                 />
                             </div>
                         </div>
+                        
+                        <!-- Affordability Indicator -->
+                        <div v-if="calculateMaxAffordablePrice > 0" class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                            <p class="text-sm text-blue-800">
+                                <span class="font-semibold">Estimated Maximum Affordable Price:</span> 
+                                {{ formatCurrency(calculateMaxAffordablePrice) }}
+                            </p>
+                            <p class="text-xs text-blue-600 mt-1">
+                                Based on {{ form.age }} years old with {{ formatCurrency(form.monthly_gross_income) }}/month income
+                            </p>
+                        </div>
+                        
+                        <!-- Loan Term Section -->
+                        <div v-if="form.age && form.monthly_gross_income" class="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
+                            <div class="flex items-center justify-between mb-2">
+                                <div>
+                                    <p class="text-sm font-semibold text-gray-800">Maximum Loan Term</p>
+                                    <p class="text-xs text-gray-600">
+                                        Based on age {{ form.co_borrower_age && form.co_borrower_age > form.age ? form.co_borrower_age : form.age }} 
+                                        and {{ form.lending_institution.toUpperCase() }}
+                                    </p>
+                                </div>
+                                <p class="text-2xl font-bold text-gray-900">{{ maxLoanTerm }} years</p>
+                            </div>
+                            
+                            <div class="mt-3">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Desired Loan Term (Optional)
+                                    <span class="text-xs text-gray-500">- Choose a shorter term for less interest</span>
+                                </label>
+                                <div class="flex items-center gap-3">
+                                    <input
+                                        v-model.number="form.desired_loan_term"
+                                        type="number"
+                                        :min="5"
+                                        :max="maxLoanTerm"
+                                        placeholder="Leave blank to use maximum"
+                                        class="flex-1 border-gray-300 rounded-md shadow-sm text-sm"
+                                    />
+                                    <span class="text-sm text-gray-600">years</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">
+                                    💡 Shorter term = Higher monthly payment, but you'll pay less interest overall.
+                                    Range: 5 to {{ maxLoanTerm }} years.
+                                </p>
+                                <p v-if="form.desired_loan_term && (form.desired_loan_term < 5 || form.desired_loan_term > maxLoanTerm)" 
+                                   class="text-xs text-red-600 mt-1">
+                                    ⚠️ Please enter a term between 5 and {{ maxLoanTerm }} years.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Product Selector -->
+                    <div v-if="products.length > 0" class="bg-white shadow rounded-lg p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h2 class="text-xl font-semibold">
+                                    Product Selection 
+                                    <span v-if="calculateMaxAffordablePrice > 0" class="text-sm font-normal text-gray-500">
+                                        - Showing {{ affordableProducts.length }} of {{ products.length }} products
+                                    </span>
+                                </h2>
+                            </div>
+                            <button
+                                @click="getProductRecommendation"
+                                :disabled="!form.age || !form.monthly_gross_income || form.age < 18 || form.monthly_gross_income <= 0 || productSelectionLoading"
+                                class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                <svg v-if="productSelectionLoading" class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span v-if="productSelectionLoading">Analyzing...</span>
+                                <span v-else>💡 Get Product Recommendation</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Recommendation Result -->
+                        <div v-if="recommendedProduct" class="mb-4 p-4 bg-green-50 border-l-4 border-green-400">
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="ml-3 flex-1">
+                                    <h3 class="text-sm font-medium text-green-800">Recommended Product</h3>
+                                    <div class="mt-2 text-sm text-green-700">
+                                        <p class="font-semibold">{{ recommendedProduct.product_name }}</p>
+                                        <p class="text-xs mt-1">{{ formatCurrency(recommendedProduct.price) }} • {{ recommendedProduct.lending_institution.toUpperCase() }}</p>
+                                        <p class="text-xs mt-1 italic">{{ recommendedProduct.reasoning }}</p>
+                                    </div>
+                                </div>
+                                <button @click="recommendedProduct = null" class="flex-shrink-0 ml-4 text-green-500 hover:text-green-700">
+                                    <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <label class="block text-sm font-medium text-gray-700">
+                                Select a Product
+                                <span class="text-xs text-gray-500">(filtered by your budget, auto-fills price and lending institution)</span>
+                            </label>
+                            <select 
+                                v-model="selectedProduct" 
+                                @change="onProductChange"
+                                class="w-full border-gray-300 rounded-md shadow-sm"
+                            >
+                                <option :value="null">-- Select a Product --</option>
+                                <template v-for="institution in lendingInstitutions" :key="institution.key">
+                                    <optgroup 
+                                        v-if="groupedAffordableProducts[institution.key]?.length > 0"
+                                        :label="institution.name"
+                                    >
+                                        <option 
+                                            v-for="product in groupedAffordableProducts[institution.key]" 
+                                            :key="product.id" 
+                                            :value="product.id"
+                                        >
+                                            {{ product.name }} - {{ formatCurrency(product.price) }}
+                                        </option>
+                                    </optgroup>
+                                </template>
+                            </select>
+                            <p v-if="calculateMaxAffordablePrice > 0 && affordableProducts.length === 0" class="text-xs text-red-600">
+                                ⚠️ No products match your current budget. Try increasing your income or consider a co-borrower.
+                            </p>
+                            <p v-else class="text-xs text-gray-500">
+                                Or manually select lending institution and enter price below
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Lending Institution -->
+                    <div class="bg-white shadow rounded-lg p-6">
+                        <h2 class="text-xl font-semibold mb-4">Lending Institution</h2>
+                        <select v-model="form.lending_institution" class="w-full border-gray-300 rounded-md shadow-sm">
+                            <option v-for="inst in lendingInstitutions" :key="inst.key" :value="inst.key">
+                                {{ inst.name }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <!-- Property Details -->
+                    <div class="bg-white shadow rounded-lg p-6">
+                        <h2 class="text-xl font-semibold mb-4">Property Details</h2>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    Total Contract Price *
+                                    <span class="text-xs text-gray-500">(editable)</span>
+                                </label>
+                                <input
+                                    v-model.number="form.total_contract_price"
+                                    type="number"
+                                    placeholder="e.g. 1000000"
+                                    class="mt-1 w-full border-gray-300 rounded-md shadow-sm"
+                                    required
+                                />
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Co-Borrower Details -->
@@ -346,10 +741,27 @@ const closeComparison = () => {
 
                     <!-- Loan Parameters -->
                     <div class="bg-white shadow rounded-lg p-6">
-                        <h2 class="text-xl font-semibold mb-4">Loan Parameters (Optional)</h2>
+                        <h2 class="text-xl font-semibold mb-4">Loan Parameters</h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Down Payment %</label>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    Interest Rate % 
+                                    <span class="text-xs text-gray-500">(auto-calculated, editable)</span>
+                                </label>
+                                <input
+                                    v-model.number="form.balance_payment_interest"
+                                    @input="onInterestRateChange"
+                                    type="number"
+                                    step="0.0001"
+                                    placeholder="e.g. 0.0625 for 6.25%"
+                                    class="mt-1 w-full border-gray-300 rounded-md shadow-sm"
+                                />
+                                <p class="mt-1 text-xs text-gray-500">
+                                    {{ form.balance_payment_interest ? formatPercent(form.balance_payment_interest) : '' }}
+                                </p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Down Payment % (Optional)</label>
                                 <input
                                     v-model.number="form.percent_down_payment"
                                     type="number"
@@ -359,17 +771,25 @@ const closeComparison = () => {
                                 />
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Miscellaneous Fee %</label>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    Miscellaneous Fee % 
+                                    <span class="text-xs text-gray-500">(auto-calculated, editable)</span>
+                                </label>
                                 <input
                                     v-model.number="form.percent_miscellaneous_fee"
+                                    @input="onMFChange"
                                     type="number"
-                                    step="0.01"
+                                    step="0.0001"
                                     placeholder="e.g. 0.085 for 8.5%"
                                     class="mt-1 w-full border-gray-300 rounded-md shadow-sm"
                                 />
+                                <p class="mt-1 text-xs text-gray-500">
+                                    {{ form.percent_miscellaneous_fee ? formatPercent(form.percent_miscellaneous_fee) : '0%' }}
+                                    <span class="text-gray-400">• Added to loan and amortized over term</span>
+                                </p>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Processing Fee</label>
+                                <label class="block text-sm font-medium text-gray-700">Processing Fee (Optional)</label>
                                 <input
                                     v-model.number="form.processing_fee"
                                     type="number"
@@ -450,8 +870,24 @@ const closeComparison = () => {
                                 <p class="text-lg font-semibold">{{ result.balance_payment_term }} years</p>
                             </div>
                             <div class="pt-4 border-t">
-                                <p class="text-sm text-gray-600">Loanable Amount</p>
-                                <p class="text-lg font-semibold">{{ formatCurrency(result.loanable_amount) }}</p>
+                                <p class="text-sm text-gray-600">Down Payment</p>
+                                <p class="text-lg font-semibold">{{ formatCurrency(result.down_payment_amount) }}</p>
+                                <p class="text-xs text-gray-500 mt-1">{{ formatPercent(result.percent_down_payment) }} of TCP, paid upfront</p>
+                            </div>
+                            <div class="pt-4 border-t">
+                                <p class="text-sm text-gray-600">Base Loan Amount</p>
+                                <p class="text-lg font-semibold">{{ formatCurrency(result.base_loan_amount) }}</p>
+                                <p class="text-xs text-gray-500 mt-1">TCP minus down payment</p>
+                            </div>
+                            <div class="pt-4 border-t">
+                                <p class="text-sm text-gray-600">Miscellaneous Fees</p>
+                                <p class="text-lg font-semibold">{{ formatCurrency(result.miscellaneous_fees) }}</p>
+                                <p class="text-xs text-gray-500 mt-1">{{ formatPercent(result.percent_miscellaneous_fees) }} of TCP, added to loan</p>
+                            </div>
+                            <div class="pt-4 border-t bg-blue-50 -mx-6 px-6 py-4">
+                                <p class="text-sm text-gray-600 font-medium">Total Amount Financed</p>
+                                <p class="text-xl font-bold text-blue-900">{{ formatCurrency(result.loanable_amount) }}</p>
+                                <p class="text-xs text-gray-500 mt-1">Your actual loan (Base + MF), amortized over {{ result.balance_payment_term }} years</p>
                             </div>
                             <div class="pt-4 border-t">
                                 <p class="text-sm text-gray-600">Required Equity</p>
@@ -476,12 +912,12 @@ const closeComparison = () => {
                                     <span class="font-medium">{{ formatPercent(result.interest_rate) }}</span>
                                 </div>
                                 <div class="flex justify-between">
-                                    <span class="text-gray-600">Down Payment %:</span>
-                                    <span class="font-medium">{{ formatPercent(result.percent_down_payment) }}</span>
+                                    <span class="text-gray-600">Down Payment:</span>
+                                    <span class="font-medium">{{ formatCurrency(result.down_payment_amount) }} ({{ formatPercent(result.percent_down_payment) }})</span>
                                 </div>
                                 <div class="flex justify-between">
-                                    <span class="text-gray-600">Miscellaneous Fees:</span>
-                                    <span class="font-medium">{{ formatCurrency(result.miscellaneous_fees) }}</span>
+                                    <span class="text-gray-600">Total Property Cost:</span>
+                                    <span class="font-medium">{{ formatCurrency(result.total_property_cost) }}</span>
                                 </div>
                                 <div class="flex justify-between">
                                     <span class="text-gray-600">Cash Out:</span>

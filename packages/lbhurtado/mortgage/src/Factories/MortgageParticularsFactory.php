@@ -37,6 +37,7 @@ class MortgageParticularsFactory
         ?float $processing_fee,
         ?bool $add_mri,
         ?bool $add_fi,
+        ?int $desired_loan_term = null,
     ): MortgageParticulars {
         $buyer = app(Buyer::class)
             ->setAge($age)
@@ -44,6 +45,13 @@ class MortgageParticularsFactory
 
         if (! is_null($additional_income)) {
             $buyer->addOtherSourcesOfIncome('test', $additional_income);
+        }
+        
+        // Set override maximum paying age if desired_loan_term is specified
+        if (! is_null($desired_loan_term)) {
+            // Calculate the required maximum paying age to achieve desired term
+            // This will be used by BalancePaymentTermCalculator
+            $buyer->setOverrideMaximumPayingAge($age + $desired_loan_term);
         }
 
         if ($co_borrower_age) {

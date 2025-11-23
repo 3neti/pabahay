@@ -9,7 +9,8 @@ use App\Http\Controllers\Mortgage\{
     AffordabilityController,
     RefinanceController,
     EquityController,
-    EarlyPaymentController
+    EarlyPaymentController,
+    ProductSelectionController
 };
 use Illuminate\Support\Facades\Route;
 
@@ -71,5 +72,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         // Early payment calculator
         Route::post('/early-payment', [EarlyPaymentController::class, 'calculate'])
             ->name('early-payment.calculate');
+        
+        // Product selection
+        Route::post('/product/select', [ProductSelectionController::class, 'select'])
+            ->name('product.select');
     });
 });
