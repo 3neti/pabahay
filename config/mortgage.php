@@ -107,7 +107,7 @@ return [
     'product_selection' => [
         'engine' => env('PRODUCT_SELECTION_ENGINE', 'rules'),
         'preference' => env('PRODUCT_SELECTION_PREFERENCE', 'cheapest'),
-        'rules_file' => storage_path('app/product_selection_rules.json'),
+        'rules_file' => resource_path('docs/product_selection_rules.json'),
         'cache_rules' => env('CACHE_PRODUCT_RULES', true),
     ],
     
