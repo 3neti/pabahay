@@ -41,6 +41,11 @@ class Product extends Model implements FiltersByLendingInstitutionInterface
         'category',
         'description',
         'price',
+        'lending_institution',
+        'base_priority',
+        'commission_rate',
+        'is_featured',
+        'boost_multiplier',
     ];
 
     public static function newFactory(): ProductFactory

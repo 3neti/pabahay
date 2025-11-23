@@ -29,6 +29,7 @@ return new class extends Migration
             $table->string('category')->index();
             $table->text('description');
             $table->integer('price'); //typical price
+            $table->string('lending_institution')->nullable();
             $table->schemalessAttributes('meta');
             $table->timestamps();
         });

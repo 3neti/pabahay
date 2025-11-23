@@ -69,8 +69,24 @@ const onProductChange = () => {
     if (selectedProduct.value) {
         const product = props.products.find(p => p.id === selectedProduct.value);
         if (product) {
+            // Populate basic product info
             form.total_contract_price = product.price;
             form.lending_institution = product.lending_institution;
+            
+            // Populate lending institution details if available
+            if (product.institution_details) {
+                form.balance_payment_interest = product.institution_details.interest_rate;
+                form.percent_down_payment = product.institution_details.percent_dp;
+                form.percent_miscellaneous_fee = product.institution_details.percent_mf;
+                form.processing_fee = product.institution_details.processing_fee;
+                form.add_mri = product.institution_details.default_add_mri;
+                form.add_fi = product.institution_details.default_add_fi;
+            }
+            
+            // Clear computation results when product changes
+            result.value = null;
+            error.value = null;
+            
             // Reset manual edit flags when product changes
             interestRateManuallyEdited.value = false;
             mfManuallyEdited.value = false;
@@ -265,6 +281,33 @@ watch(
         }, 500);
     },
     { immediate: true } // Calculate on mount
+);
+
+// Watch for ANY form field change that affects computation and clear results
+watch(
+    [
+        () => form.lending_institution,
+        () => form.total_contract_price,
+        () => form.age,
+        () => form.monthly_gross_income,
+        () => form.co_borrower_age,
+        () => form.co_borrower_income,
+        () => form.additional_income,
+        () => form.balance_payment_interest,
+        () => form.percent_down_payment,
+        () => form.percent_miscellaneous_fee,
+        () => form.processing_fee,
+        () => form.add_mri,
+        () => form.add_fi,
+        () => form.desired_loan_term,
+    ],
+    () => {
+        // Clear computation results whenever any input changes
+        if (result.value !== null) {
+            result.value = null;
+            error.value = null;
+        }
+    }
 );
 
 // Manual product recommendation (no auto-select)
