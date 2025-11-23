@@ -864,6 +864,27 @@ const closeComparison = () => {
                             <div>
                                 <p class="text-sm text-gray-600">Monthly Amortization</p>
                                 <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(result.monthly_amortization) }}</p>
+                                
+                                <!-- Amortization Breakdown -->
+                                <div v-if="result.monthly_mri > 0 || result.monthly_fi > 0" class="mt-3 p-3 bg-gray-50 rounded text-xs space-y-1">
+                                    <p class="font-medium text-gray-700 mb-2">Breakdown:</p>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-600">Base Amortization:</span>
+                                        <span class="font-medium">{{ formatCurrency(result.base_amortization) }}</span>
+                                    </div>
+                                    <div v-if="result.monthly_mri > 0" class="flex justify-between">
+                                        <span class="text-gray-600">+ MRI:</span>
+                                        <span class="font-medium">{{ formatCurrency(result.monthly_mri) }}</span>
+                                    </div>
+                                    <div v-if="result.monthly_fi > 0" class="flex justify-between">
+                                        <span class="text-gray-600">+ FI:</span>
+                                        <span class="font-medium">{{ formatCurrency(result.monthly_fi) }}</span>
+                                    </div>
+                                    <div class="pt-2 border-t border-gray-300 flex justify-between">
+                                        <span class="text-gray-700 font-semibold">Total:</span>
+                                        <span class="font-bold">{{ formatCurrency(result.monthly_amortization) }}</span>
+                                    </div>
+                                </div>
                             </div>
                             <div class="pt-4 border-t">
                                 <p class="text-sm text-gray-600">Loan Term</p>

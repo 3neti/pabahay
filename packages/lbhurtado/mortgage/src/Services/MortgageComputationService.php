@@ -3,6 +3,8 @@
 namespace LBHurtado\Mortgage\Services;
 
 use Illuminate\Support\Facades\Log;
+use LBHurtado\Mortgage\Calculators\MonthlyAmortizationCalculator;
+use LBHurtado\Mortgage\Calculators\FeesCalculator;
 use LBHurtado\Mortgage\Data\Inputs\MortgageInputsData;
 use LBHurtado\Mortgage\Data\MortgageComputationData;
 use LBHurtado\Mortgage\Factories\MortgageParticularsFactory;
@@ -68,6 +70,14 @@ class MortgageComputationService
         $downPaymentPercent = $computation->percent_down_payment->value();
         $baseLoanAmount = $tcp * (1 - $downPaymentPercent);
         
+        // Get individual fee components
+        $feesCalculator = new FeesCalculator($computation->inputs);
+        $amortizationCalculator = new MonthlyAmortizationCalculator($computation->inputs);
+        
+        $mriMonthly = $feesCalculator->mri()?->getAmount()->toFloat() ?? 0;
+        $fiMonthly = $feesCalculator->fireInsurance()?->getAmount()->toFloat() ?? 0;
+        $baseAmortization = $amortizationCalculator->principal()->getAmount()->toFloat();
+        
         return [
             'inputs' => $computation->inputs->toArray(),
             'lending_institution' => [
@@ -88,6 +98,9 @@ class MortgageComputationService
             'loanable_amount' => $computation->loanable_amount->getAmount()->toFloat(),
             'required_equity' => $computation->required_equity->getAmount()->toFloat(),
             'monthly_amortization' => $computation->monthly_amortization->getAmount()->toFloat(),
+            'base_amortization' => $baseAmortization,
+            'monthly_mri' => $mriMonthly,
+            'monthly_fi' => $fiMonthly,
             'miscellaneous_fees' => $computation->miscellaneous_fees->getAmount()->toFloat(),
             'add_on_fees' => $computation->add_on_fees->getAmount()->toFloat(),
             'cash_out' => $computation->cash_out->getAmount()->toFloat(),
