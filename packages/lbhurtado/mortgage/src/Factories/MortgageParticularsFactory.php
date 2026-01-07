@@ -33,6 +33,7 @@ class MortgageParticularsFactory
         ?float $additional_income,
         ?float $balance_payment_interest,
         ?float $percent_down_payment,
+        ?int $down_payment_term = null,
         ?float $percent_miscellaneous_fee,
         ?float $processing_fee,
         ?bool $add_mri,

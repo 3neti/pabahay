@@ -69,6 +69,13 @@ class MortgageComputationService
         $tcp = $computation->total_contract_price->base()->getAmount()->toFloat();
         $downPaymentPercent = $computation->percent_down_payment->value();
         $baseLoanAmount = $tcp * (1 - $downPaymentPercent);
+        $downPaymentAmount = $tcp * $downPaymentPercent;
+        
+        // Get down payment term (default to 0 for spot payment)
+        $downPaymentTerm = $inputs->down_payment_term ?? 0;
+        
+        // Generate down payment schedule
+        $downPaymentSchedule = $this->generateDownPaymentSchedule($downPaymentAmount, $downPaymentTerm);
         
         // Get individual fee components
         $feesCalculator = new FeesCalculator($computation->inputs);
@@ -89,7 +96,9 @@ class MortgageComputationService
             'percent_down_payment' => $downPaymentPercent,
             'percent_miscellaneous_fees' => $computation->percent_miscellaneous_fees->value(),
             'total_contract_price' => $tcp,
-            'down_payment_amount' => $tcp * $downPaymentPercent,
+            'down_payment_amount' => $downPaymentAmount,
+            'down_payment_term' => $downPaymentTerm,
+            'down_payment_schedule' => $downPaymentSchedule,
             'base_loan_amount' => $baseLoanAmount,
             'balance_payment_term' => $computation->balance_payment_term,
             'income_requirement_multiplier' => $computation->income_requirement_multiplier->value(),
@@ -111,6 +120,45 @@ class MortgageComputationService
             'qualifies' => $computation->qualifies,
             'qualification' => $this->qualificationService->formatQualificationResult($computation),
         ];
+    }
+
+    /**
+     * Generate down payment schedule based on term.
+     *
+     * @param float $totalDownPayment Total down payment amount
+     * @param int $term Payment term in months (0 = spot, 3, 6, or 12)
+     * @return array Schedule with month numbers and amounts
+     */
+    protected function generateDownPaymentSchedule(float $totalDownPayment, int $term): array
+    {
+        if ($totalDownPayment <= 0) {
+            return [];
+        }
+
+        // Spot payment (0 months)
+        if ($term === 0) {
+            return [
+                [
+                    'month' => 0,
+                    'amount' => $totalDownPayment,
+                    'label' => 'Spot Payment',
+                ],
+            ];
+        }
+
+        // Deferred payment (3, 6, or 12 months)
+        $monthlyAmount = $totalDownPayment / $term;
+        $schedule = [];
+
+        for ($i = $term; $i >= 1; $i--) {
+            $schedule[] = [
+                'month' => -$i,
+                'amount' => $monthlyAmount,
+                'label' => "Month -$i",
+            ];
+        }
+
+        return $schedule;
     }
 
     /**

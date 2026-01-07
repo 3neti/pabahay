@@ -41,6 +41,7 @@ class MortgageInputsData extends Data
         #[WithTransformer(PercentToFloatTransformer::class)]
         #[WithCast(PercentCast::class)]
         public ?Percent $percent_down_payment,
+        public ?int $down_payment_term = null,
         #[WithTransformer(PercentToFloatTransformer::class)]
         #[WithCast(PercentCast::class)]
         public ?Percent $percent_miscellaneous_fee,

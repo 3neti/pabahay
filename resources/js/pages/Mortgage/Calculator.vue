@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import axios from 'axios';
 import AmortizationSchedule from '@/Components/Mortgage/AmortizationSchedule.vue';
+import DownPaymentSchedule from '@/Components/Mortgage/DownPaymentSchedule.vue';
 
 const props = defineProps({
     defaults: {
@@ -50,6 +51,7 @@ const form = useForm({
     additional_income: null,
     balance_payment_interest: calculateInterestRate('hdmf', props.defaults.total_contract_price),
     percent_down_payment: null,
+    down_payment_term: 12, // Default to 12 months
     percent_miscellaneous_fee: null,
     processing_fee: null,
     add_mri: false,
@@ -294,6 +296,7 @@ watch(
         () => form.additional_income,
         () => form.balance_payment_interest,
         () => form.percent_down_payment,
+        () => form.down_payment_term,
         () => form.percent_miscellaneous_fee,
         () => form.processing_fee,
         () => form.add_mri,
@@ -756,6 +759,24 @@ const closeSavedAlert = () => {
                     <!-- Loan Parameters -->
                     <div class="bg-white shadow rounded-lg p-6">
                         <h2 class="text-xl font-semibold mb-4">Loan Parameters</h2>
+                        
+                        <!-- Down Payment Term (Full Width) -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Down Payment Term</label>
+                            <select
+                                v-model.number="form.down_payment_term"
+                                class="w-full border-gray-300 rounded-md shadow-sm"
+                            >
+                                <option :value="0">Spot Payment (Pay Now)</option>
+                                <option :value="3">3 Months</option>
+                                <option :value="6">6 Months</option>
+                                <option :value="12">12 Months</option>
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">
+                                No interest for deferred down payment
+                            </p>
+                        </div>
+                        
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700">
@@ -786,7 +807,7 @@ const closeSavedAlert = () => {
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700">
-                                    Miscellaneous Fee % 
+                                    Miscellaneous Fee %
                                     <span class="text-xs text-gray-500">(auto-calculated, editable)</span>
                                 </label>
                                 <input
@@ -900,7 +921,13 @@ const closeSavedAlert = () => {
                             <div class="pt-4 border-t">
                                 <p class="text-sm text-gray-600">Down Payment</p>
                                 <p class="text-lg font-semibold">{{ formatCurrency(result.down_payment_amount) }}</p>
-                                <p class="text-xs text-gray-500 mt-1">{{ formatPercent(result.percent_down_payment) }} of TCP, paid upfront</p>
+                                <p class="text-xs text-gray-500 mt-1">
+                                    {{ formatPercent(result.percent_down_payment) }} of TCP
+                                    <template v-if="result.down_payment_term === 0">, paid upfront</template>
+                                    <template v-else>
+                                        — {{ formatCurrency(result.down_payment_amount / result.down_payment_term) }}/month for {{ result.down_payment_term }} months
+                                    </template>
+                                </p>
                             </div>
                             <div class="pt-4 border-t">
                                 <p class="text-sm text-gray-600">Base Loan Amount</p>
@@ -968,6 +995,14 @@ const closeSavedAlert = () => {
                         </button>
                     </div>
                 </div>
+            </div>
+
+            <!-- Down Payment Schedule Section -->
+            <div v-if="result && result.down_payment_term > 0 && result.down_payment_schedule" class="mt-8">
+                <DownPaymentSchedule
+                    :schedule="result.down_payment_schedule"
+                    :total-amount="result.down_payment_amount"
+                />
             </div>
 
             <!-- Amortization Schedule Section -->

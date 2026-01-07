@@ -46,6 +46,7 @@ class ComputeMortgageRequest extends FormRequest
             // Loan parameters (optional overrides)
             'balance_payment_interest' => ['nullable', 'numeric', 'min:0', 'max:1'],
             'percent_down_payment' => ['nullable', 'numeric', new ValidDownPaymentPercent()],
+            'down_payment_term' => ['nullable', 'integer', 'in:0,3,6,12'],
             'percent_miscellaneous_fee' => ['nullable', 'numeric', 'min:0', 'max:1'],
             'processing_fee' => ['nullable', 'numeric', 'min:0'],
             'desired_loan_term' => ['nullable', 'integer', 'min:5', 'max:30'],
